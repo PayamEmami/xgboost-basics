@@ -1,0 +1,1091 @@
+# Math behind XGBoost: from scratch, slowly, and with intuition
+
+## 1. Introduction
+
+In this section, I will go through some of the most important mathematical details of XGBoost. But before going forward, as a reminder, just have it on your mind that XGBoost creates trees sequentially. We start from some base score (let's say zero) and each tree adds some correction to this score until we get closer and closer to the training data. This is the core of XGBoost. We just have to figure out by how much we should change the scores in each leaf of a tree and also how to build the tree.
+
+## 2. The model: prediction as a sum of trees
+
+Suppose we have training data
+
+$$
+(x_1, y_1), (x_2, y_2), \dots, (x_n, y_n),
+$$
+
+where:
+
+- $x_i$ is the feature vector for observation $i$
+- $y_i$ is the target for observation $i$
+
+We want a model that gives a prediction $\hat y_i$ from $x_i$.
+
+In linear regression, we often write something like
+
+$$
+\hat y_i = \beta_0 + \beta_1 x_{i1} + \cdots + \beta_p x_{ip}.
+$$
+
+There, the unknown object is a vector of coefficients $\beta$.
+
+In XGBoost, the unknown object is not one coefficient vector.
+Instead, the model is a sum of trees:
+
+$$
+\hat y_i = \sum_{k=1}^{K} f_k(x_i), \qquad f_k \in \mathcal{F}.
+$$
+
+This formula is the backbone of XGBoost.
+
+It says:
+
+- there are $K$ trees
+- each tree is a function $f_k$
+- the final prediction is the sum of all tree outputs
+
+So each tree contributes a small correction, and all these corrections accumulate into the final prediction.
+
+```{mermaid}
+%%{init: {'themeVariables': { 'fontSize': '50px' }}}%%
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#000000",
+    "primaryTextColor": "#000000",
+    "lineColor": "#000000",
+    "secondaryColor": "#ffffff",
+    "tertiaryColor": "#ffffff",
+    "clusterBkg": "#ffffff",
+    "clusterBorder": "#000000",
+    "fontFamily": "Arial"
+  }
+}}%%
+
+flowchart LR
+    subgraph T1["Tree 1"]
+        A1["time < 9"] --> B1["left: +1.42"]
+        A1 --> C1["right: +0.37"]
+    end
+
+    P1["+"]
+
+    subgraph T2["Tree 2"]
+        A2["time < 21"] --> B2["left: -0.21"]
+        A2 --> C2["right: +0.54"]
+    end
+
+    P2["+"]
+
+    subgraph T3["Tree 3"]
+        A3["time < 5.6"] --> B3["left: +0.18"]
+        A3 --> C3["right: -0.09"]
+    end
+
+    EQUAL["="]
+    FINAL["Final prediction"]
+
+    T1 --> P1 --> T2 --> P2 --> T3 --> EQUAL --> FINAL
+
+    classDef blackstroke fill:#ffffff,stroke:#000000,color:#000000,stroke-width:1.5px;
+    classDef textonly fill:#ffffff,stroke:#ffffff,color:#000000;
+
+    class A1,B1,C1,A2,B2,C2,A3,B3,C3,FINAL blackstroke;
+    class P1,P2,EQUAL textonly;
+```
+
+
+## 3. What exactly is one tree in XGBoost?
+
+Mathematically, a tree is a function that assigns each input to a leaf, and each leaf has a numerical output.
+
+XGBoost writes a tree as
+
+$$
+f(x) = w_{q(x)}.
+$$
+
+This compact notation is very important. Let us decode it carefully.
+
+The function $q(x)$ tells us which leaf the sample $x$ lands in.
+If the tree has $T$ leaves, then $q(x)$ takes values in $\{1,2,\dots,T\}$.
+
+The number $w_j$ is the score assigned to leaf $j$.
+
+So if a sample $x$ lands in leaf 3, then
+
+$$
+q(x) = 3
+$$
+
+and the tree output is
+
+$$
+f(x) = w_3.
+$$
+
+This means that all observations falling into the same leaf receive **exactly** the same tree output.
+
+So a tree has two mathematical parts:
+
+1. a structure, which decides who goes to which leaf
+2. a vector of leaf values, which decides what output each leaf gives
+
+This will matter a lot later, because XGBoost needs to optimize both the tree structure and the leaf values
+
+```{mermaid}
+flowchart TD
+    A["Input sample x"] --> B{"x1 < 5?"}
+    B -- "Yes" --> C{"x2 < 2?"}
+    B -- "No" --> D["Leaf 3<br/>q(x)=3<br/>output = w3"]
+
+    C -- "Yes" --> E["Leaf 1<br/>q(x)=1<br/>output = w1"]
+    C -- "No" --> F["Leaf 2<br/>q(x)=2<br/>output = w2"]
+```
+
+## 4. The objective function:
+
+As it should be obvious, we also need a way to measure whether our predictions are good or not. XGBoost does this using an objective function:
+
+$$
+\mathrm{Obj} = \sum_{i=1}^{n} l(y_i, \hat y_i) + \sum_{k=1}^{K} \Omega(f_k).
+$$
+
+This has two parts. The first part is the data-fitting term:
+
+$$
+\sum_{i=1}^{n} l(y_i, \hat y_i).
+$$
+
+Here, $l(y_i, \hat y_i)$ is the loss for observation $i$.
+It tells us how bad the prediction $\hat y_i$ is when the true answer is $y_i$.
+
+The second part is the regularization term:
+
+$$
+\sum_{k=1}^{K} \Omega(f_k).
+$$
+
+This penalizes complexity.
+
+So XGBoost is always balancing two goals:
+
+- fit the training data well
+- keep the model from becoming unnecessarily complicated
+
+
+## 5. Regularization for a tree
+
+Let's first have a look at the regularization. XGBoost uses the following regularization term for a tree:
+
+$$
+\Omega(f) = \gamma T + \frac{1}{2}\lambda \sum_{j=1}^{T} w_j^2,
+$$
+
+where:
+
+- $T$ is the number of leaves
+- $w_j$ is the output value of leaf $j$
+- $\gamma$ penalizes adding leaves
+- $\lambda$ penalizes very large leaf outputs
+
+Let us interpret this slowly.
+
+The term $\gamma T$ says:
+
+If you create more leaves, you pay a cost.
+
+So a split is not automatically good. A split must improve the fit enough to justify the extra complexity.
+
+The term
+
+$$
+\frac{1}{2}\lambda \sum_{j=1}^{T} w_j^2
+$$
+
+says ff leaf values become very large in magnitude, you also pay a cost.
+
+So XGBoost prefers leaf outputs that are not too extreme.
+
+This means XGBoost regularizes both the shape of the tree and the size of the corrections made by the leaves.
+
+
+## 6. Additive learning
+
+If the full model is
+
+$$
+\hat y_i = \sum_{k=1}^{K} f_k(x_i),
+$$
+
+then training all trees jointly would be very difficult becuase we have to both fix the structure of the tree and its values.
+
+XGBoost avoids that by learning additively.
+
+At boosting round $t$, we already have the current prediction
+
+$$
+\hat y_i^{(t-1)}.
+$$
+
+Then we add one new tree $f_t$:
+
+$$
+\hat y_i^{(t)} = \hat y_i^{(t-1)} + f_t(x_i).
+$$
+
+Usually we start from
+
+$$
+\hat y_i^{(0)} = 0
+$$
+
+or from a constant initial score, depending on the loss.
+
+The essential idea is that at round $t$, all previous trees are fixed. The only new thing we are trying to find is the new tree $f_t$. So instead of solving one giant optimization problem, we solve many smaller ones.
+
+## 7. The objective at boosting round $t$
+
+At round $t$, the new prediction is
+
+$$
+\hat y_i^{(t)} = \hat y_i^{(t-1)} + f_t(x_i).
+$$
+
+So the objective becomes
+
+$$
+\mathrm{Obj}^{(t)} =
+\sum_{i=1}^{n}
+l\left(y_i, \hat y_i^{(t-1)} + f_t(x_i)\right)
++
+\Omega(f_t)
++
+\text{constant}.
+$$
+
+You noticed the constat in the formula, this is because all earlier trees are already fixed.
+Their contributions to the objective do not change while we are fitting the new tree.
+So for the purpose of optimizing $f_t$, all terms involving old trees are constants.
+
+This means the round-$t$ training problem is choose the new tree $f_t$ that minimizes
+
+$$
+\sum_{i=1}^{n}
+l\left(y_i, \hat y_i^{(t-1)} + f_t(x_i)\right)
++
+\Omega(f_t).
+$$
+
+
+The hard part is that $f_t$ is a tree.
+
+That means the thing we want to optimize contains:
+
+- a discrete structure, because we must choose splits
+- continuous parameters, because each leaf has a numerical value
+
+The structure part is combinatorial. There are many possible features to split on, many thresholds, many tree shapes.
+
+So we need a way to evaluate candidate trees efficiently.
+
+The trick is instead of optimizing the true loss directly at each step, XGBoost approximates it locally using a second-order Taylor expansion.
+
+## 8. Taylor expansion
+
+Suppose we have a smooth function $F(z)$, and we are currently at the point $z_0$.
+
+What happens to the value of the function if we move a little away from $z_0$?
+
+Let that small move be $\Delta$. Then the new point is $z_0 + \Delta$.
+
+Taylor expansion gives us a very useful local approximation. It says that if the move is small, then we do not need to know the full complicated shape of the function. We only need to know three things at the current point:
+
+* the current value of the function
+* the current slope
+* the current curvature
+
+Using those three pieces of information, we can approximate the new function value as
+
+$$
+F(z_0 + \Delta)
+\approx
+F(z_0) + F'(z_0)\Delta + \frac{1}{2}F''(z_0)\Delta^2.
+$$
+
+
+First, $F(z_0)$ is the value of the function where we are right now. That is our starting point.
+
+Next, $F'(z_0)\Delta$ is the linear correction.
+The first derivative ($F'(z_0)$) tells us whether the function is currently going up or down, and how steeply.
+So this term tells us how the function would change if the slope stayed roughly constant for a very small move.
+
+Finally, $\frac{1}{2}F''(z_0)\Delta^2$ adds a curvature correction.
+The second derivative ($F''(z_0)$) tells us how the slope itself changes as we move.
+
+* If ($F''(z_0) > 0$), the curve bends upward.
+* If ($F''(z_0) < 0$), the curve bends downward.
+* If ($F''(z_0) \approx 0$), the function is locally almost straight.
+
+So the second derivative tells us whether the current trend is becoming stronger or weaker as we move away from ($z_0$).
+
+This is why the Taylor approximation is so useful. Even if the original function is complicated, near the current point it can be approximated by a quadratic expression. Quadratic expressions are much easier to optimize, because we can minimize them analytically.
+
+## 9. Taylor expansion in the XGBoost setting
+
+We said that if we are at some current point and make a small move, then we can approximate the new function value using three local pieces of information:
+
+* the current value
+* the slope
+* the curvature
+
+XGBoost does exactly this, but here the function is the loss, and the "current point" is the current prediction.
+
+For observation $i$, the loss at boosting round $t$ is
+
+$$
+l\left(y_i, \hat y_i^{(t-1)} + f_t(x_i)\right).
+$$
+
+Let us read this carefully.
+
+* $y_i$ is the true observed outcome
+* $\hat y_i^{(t-1)}$ is the current prediction from all previous trees
+* $f_t(x_i)$ is the extra correction added by the new tree at round $t$
+
+So the new tree does not replace the old prediction. It only adds a small adjustment to it.
+
+That means we can think of the loss as a function of the prediction value, where we are currently sitting at $\hat y_i^{(t-1)}$ and then taking a small step of size $f_t(x_i)$.
+
+We therefore expand the loss around the current prediction $\hat y_i^{(t-1)}$.
+
+Define the first derivative
+
+$$
+g_i =
+\left.
+\frac{\partial l(y_i, \hat y)}{\partial \hat y}
+\right|_{\hat y = \hat y_i^{(t-1)}}
+$$
+
+and the second derivative
+
+$$
+h_i =
+\left.
+\frac{\partial^2 l(y_i, \hat y)}{\partial \hat y^2}
+\right|_{\hat y = \hat y_i^{(t-1)}}.
+$$
+
+These two quantities play exactly the same role as in the general Taylor formula.
+
+* $g_i$ is the local slope of the loss with respect to the prediction
+* $h_i$ is the local curvature of the loss with respect to the prediction
+
+So:
+
+* $g_i$ tells us whether increasing the prediction would locally increase or decrease the loss
+* $h_i$ tells us how sharply that slope itself changes as we move
+
+Using the second-order Taylor expansion, we get
+
+$$
+l\left(y_i, \hat y_i^{(t-1)} + f_t(x_i)\right)
+\approx
+l\left(y_i, \hat y_i^{(t-1)}\right)
++
+g_i f_t(x_i)
++
+\frac{1}{2} h_i f_t(x_i)^2.
+$$
+
+This approximation has the same three-part structure as before.
+
+First,
+
+$$
+l\left(y_i, \hat y_i^{(t-1)}\right)
+$$
+
+is the current loss value at the current prediction.
+
+Second,
+
+$$
+g_i f_t(x_i)
+$$
+
+is the linear correction based on the local slope.
+
+Third,
+
+$$
+\frac{1}{2} h_i f_t(x_i)^2
+$$
+
+is the curvature correction, which refines the linear approximation by accounting for how the slope changes.
+
+So for each observation, XGBoost replaces the original loss by a local quadratic approximation around the current prediction.
+
+It looks complicated but it is just important to remember that because the original loss may be difficult to optimize directly, this local quadratic form is much easier to work with. Once the loss is written this way, XGBoost can derive explicit formulas for leaf weights and for the gain from making a split.
+
+
+::: {.callout-note collapse="true"}
+
+It is important not to think of gradients abstractly.
+
+For one observation $i$:
+
+$$
+g_i
+=
+\left.
+\frac{\partial l(y_i, \hat y)}{\partial \hat y}
+\right|_{\hat y = \hat y_i^{(t-1)}}
+$$
+
+tells us how the loss changes if we nudge the prediction a little bit.
+
+So $g_i$ says in which direction should this prediction move to reduce the loss.
+
+If $g_i$ is positive, increasing the prediction increases the loss locally, so the prediction would prefer to move downward.
+If $g_i$ is negative, increasing the prediction decreases the loss locally, so the prediction would prefer to move upward.
+
+The second derivative
+
+$$
+h_i
+=
+\left.
+\frac{\partial^2 l(y_i, \hat y)}{\partial \hat y^2}
+\right|_{\hat y = \hat y_i^{(t-1)}}
+$$
+
+tells us how sharply the loss bends around the current prediction.
+
+So $h_i$ answers wow cautious should we be when making that move.
+
+If the curvature is high, the loss changes rapidly, so we should usually take a smaller step.
+If the curvature is lower, a larger step may be acceptable.
+
+So in plain language:
+
+- gradient says where to move
+- Hessian says how carefully to move
+
+This is why XGBoost uses second-order information.
+
+:::
+
+Now we can substitute the Taylor approximation into the round-$t$ objective gives
+
+$$
+\mathrm{Obj}^{(t)}
+\approx
+\sum_{i=1}^{n}
+\left[
+l\left(y_i, \hat y_i^{(t-1)}\right)
++
+g_i f_t(x_i)
++
+\frac{1}{2} h_i f_t(x_i)^2
+\right]
++
+\Omega(f_t).
+$$
+
+The term
+
+$$
+\sum_{i=1}^{n} l\left(y_i, \hat y_i^{(t-1)}\right)
+$$
+
+does not depend on the new tree $f_t$. So for optimization, it is constant and can be dropped.
+
+This leaves the approximate objective
+
+$$
+\tilde{\mathrm{Obj}}^{(t)}
+=
+\sum_{i=1}^{n}
+\left[
+g_i f_t(x_i)
++
+\frac{1}{2} h_i f_t(x_i)^2
+\right]
++
+\Omega(f_t).
+$$
+
+
+## 10. Plugging in the tree representation
+
+Recall that a tree is written as
+
+$$
+f_t(x) = w_{q(x)}.
+$$
+
+So for observation $i$,
+
+$$
+f_t(x_i) = w_{q(x_i)}.
+$$
+
+Substituting this into the approximate objective gives
+
+$$
+\tilde{\mathrm{Obj}}^{(t)}
+=
+\sum_{i=1}^{n}
+\left[
+g_i w_{q(x_i)}
++
+\frac{1}{2} h_i w_{q(x_i)}^2
+\right]
++
+\gamma T
++
+\frac{1}{2}\lambda \sum_{j=1}^{T} w_j^2.
+$$
+
+Now the tree structure appears through $q(x_i)$, which tells us which leaf each observation belongs to.
+
+
+## 11. Grouping observations by leaf
+
+Let
+
+$$
+I_j = \{ i \mid q(x_i) = j \}
+$$
+
+be the set of observations that fall into leaf $j$.
+
+Because every observation in leaf $j$ gets the same output $w_j$, we can regroup the objective by leaf instead of by observation.
+
+Then
+
+$$
+\tilde{\mathrm{Obj}}^{(t)}
+=
+\sum_{j=1}^{T}
+\left[
+\left(\sum_{i \in I_j} g_i\right) w_j
++
+\frac{1}{2}
+\left(\sum_{i \in I_j} h_i\right) w_j^2
+\right]
++
+\gamma T
++
+\frac{1}{2}\lambda \sum_{j=1}^{T} w_j^2.
+$$
+
+Now combine the quadratic terms:
+
+$$
+\tilde{\mathrm{Obj}}^{(t)}
+=
+\sum_{j=1}^{T}
+\left[
+\left(\sum_{i \in I_j} g_i\right) w_j
++
+\frac{1}{2}
+\left(\sum_{i \in I_j} h_i + \lambda\right) w_j^2
+\right]
++
+\gamma T.
+$$
+
+Define the leaf-level sums
+
+$$
+G_j = \sum_{i \in I_j} g_i,
+\qquad
+H_j = \sum_{i \in I_j} h_i.
+$$
+
+Then the objective becomes
+
+$$
+\tilde{\mathrm{Obj}}^{(t)}
+=
+\sum_{j=1}^{T}
+\left[
+G_j w_j
++
+\frac{1}{2}(H_j + \lambda) w_j^2
+\right]
++
+\gamma T.
+$$
+
+
+So basicaly once the tree structure is fixed, the entire role of the data inside leaf $j$ is summarized by just two numbers:
+
+$$
+G_j = \sum_{i \in I_j} g_i,
+\qquad
+H_j = \sum_{i \in I_j} h_i.
+$$
+
+That means the samples inside a leaf do not matter individually anymore.
+What matters is only:
+
+- their total gradient
+- their total Hessian
+
+So the whole optimization for the leaf value $w_j$ depends only on these aggregated quantities.
+
+## 12. Deriving the optimal leaf value
+
+Now suppose the tree structure is fixed.
+Then the only unknowns are the leaf outputs $w_1, \dots, w_T$.
+
+Because the objective separates over leaves, we can optimize one leaf at a time.
+
+For leaf $j$, the relevant part of the objective is
+
+$$
+G_j w_j + \frac{1}{2}(H_j + \lambda) w_j^2.
+$$
+
+This is a quadratic function of $w_j$. This is our objective and we need to minimize it to get an optimal value for it.
+
+To minimize it, differentiate with respect to $w_j$:
+
+$$
+\frac{\partial}{\partial w_j}
+\left[
+G_j w_j + \frac{1}{2}(H_j + \lambda) w_j^2
+\right]
+=
+G_j + (H_j + \lambda) w_j.
+$$
+
+Set the derivative equal to zero:
+
+$$
+G_j + (H_j + \lambda) w_j = 0.
+$$
+
+Solving for $w_j$ gives
+
+$$
+w_j^\ast = - \frac{G_j}{H_j + \lambda}.
+$$
+
+This is the XGBoost leaf-weight formula for signle leaf.The numerator $G_j$ is the total gradient pressure in the leaf.
+It tells us the overall direction in which the predictions of the samples in that leaf want to move.
+
+The denominator $H_j + \lambda$ controls how large that move should be.
+
+- $H_j$ reflects local curvature of the loss
+- $\lambda$ adds shrinkage and stabilizes the update
+
+So the leaf output is negative slope divided by curvature
+
+::: {.callout-note collapse="true"}
+## Connection to Newton’s method
+In one-dimensional optimization, Newton’s method updates a parameter by
+
+$$
+\theta_{\text{new}}
+=
+\theta_{\text{old}}
+-
+\frac{\text{gradient}}{\text{Hessian}}.
+$$
+
+That is:
+
+- move opposite the slope
+- scale the step by curvature
+
+The XGBoost leaf formula
+
+$$
+w_j^\ast = - \frac{G_j}{H_j + \lambda}
+$$
+
+has exactly the same form. So while ordinary gradient boosting is often explained as fitting negative gradients, XGBoost goes further:
+
+It uses second-order information and computes something much closer to a local Newton update.
+:::
+
+## 13. Deriving the score of a fixed tree structure
+
+Now let us plug the optimal leaf value back into the objective.
+
+For one leaf, the objective contribution is
+
+$$
+G_j w_j + \frac{1}{2}(H_j + \lambda) w_j^2.
+$$
+
+Insert
+
+$$
+w_j^\ast = - \frac{G_j}{H_j + \lambda}.
+$$
+
+The first term becomes
+
+$$
+G_j w_j^\ast
+=
+G_j \left(- \frac{G_j}{H_j + \lambda}\right)
+=
+- \frac{G_j^2}{H_j + \lambda}.
+$$
+
+The second term becomes
+
+$$
+\frac{1}{2}(H_j + \lambda)(w_j^\ast)^2
+=
+\frac{1}{2}(H_j + \lambda)
+\left(
+\frac{G_j^2}{(H_j + \lambda)^2}
+\right)
+=
+\frac{1}{2}
+\frac{G_j^2}{H_j + \lambda}.
+$$
+
+Adding them gives
+
+$$
+- \frac{G_j^2}{H_j + \lambda}
++
+\frac{1}{2}
+\frac{G_j^2}{H_j + \lambda}
+=
+- \frac{1}{2}
+\frac{G_j^2}{H_j + \lambda}.
+$$
+
+So each leaf contributes
+
+$$
+- \frac{1}{2}
+\frac{G_j^2}{H_j + \lambda}.
+$$
+
+Therefore the best objective value for a fixed tree structure is
+
+$$
+\tilde{\mathrm{Obj}}^\ast
+=
+-
+\frac{1}{2}
+\sum_{j=1}^{T}
+\frac{G_j^2}{H_j + \lambda}
++
+\gamma T.
+$$
+
+This is the score of a tree structure and is important because it tells us how to evaluate a proposed tree structure.
+
+If we know:
+
+- which samples fall into each leaf
+- the sum of gradients in each leaf
+- the sum of Hessians in each leaf
+
+then we can compute
+
+$$
+-\frac{1}{2} \sum_{j=1}^{T} \frac{G_j^2}{H_j + \lambda}+\gamma T
+$$
+
+and judge how good that tree is. This essentially replaces impurity measures like Gini or entropy.
+
+## 14. Deriving the split gain formula
+
+Suppose we currently have one leaf, which we may or may not split.
+
+Let the parent node contain a set of observations with total gradient and Hessian
+
+$$
+G = \sum_{i \in I} g_i,
+\qquad
+H = \sum_{i \in I} h_i.
+$$
+
+If we keep it as one leaf, its best contribution is
+
+$$
+- \frac{1}{2} \frac{G^2}{H + \lambda}.
+$$
+
+Now think we split this node into a left child and a right child.
+
+Let their statistics be
+
+$$
+G_L, H_L
+\qquad \text{and} \qquad
+G_R, H_R.
+$$
+
+Because the children partition the parent, we have
+
+$$
+G = G_L + G_R,
+\qquad
+H = H_L + H_R.
+$$
+
+After the split, the best contribution becomes
+
+$$
+- \frac{1}{2} \frac{G_L^2}{H_L + \lambda}
+-
+\frac{1}{2} \frac{G_R^2}{H_R + \lambda}.
+$$
+
+But making the split increases the number of leaves, so we must pay the complexity penalty $\gamma$.
+
+Therefore the improvement from the split, called the gain, is
+
+$$
+\mathrm{Gain}
+=
+\frac{1}{2}
+\left[
+\frac{G_L^2}{H_L + \lambda}
++
+\frac{G_R^2}{H_R + \lambda}
+-
+\frac{(G_L + G_R)^2}{H_L + H_R + \lambda}
+\right]
+-
+\gamma.
+$$
+
+
+This formula has a very natural meaning.
+
+The term
+
+$$
+\frac{G_L^2}{H_L + \lambda}
+$$
+
+measures how useful the left child is.
+
+The term
+
+$$
+\frac{G_R^2}{H_R + \lambda}
+$$
+
+measures how useful the right child is.
+
+The term
+
+$$
+\frac{(G_L + G_R)^2}{H_L + H_R + \lambda}
+$$
+
+measures how useful the parent would be if it stayed unsplit.
+
+So the gain says how much better is it to give the left and right groups separate corrections instead of forcing them to share one correction?
+
+Then we subtract $\gamma$ because more leaves mean more complexity.
+
+So a split is good only if the improvement in fit is large enough to justify the added complexity.
+
+
+## 15. The full algorithm for one boosting round
+
+Now let us summarize exactly what happens in one round of XGBoost.
+
+### Step 1: compute current predictions
+
+Using all trees built so far, compute
+
+$$
+\hat y_i^{(t-1)}
+$$
+
+for every training observation.
+
+### Step 2: compute gradients and Hessians
+
+For each observation, compute
+
+$$
+g_i =
+\left.
+\frac{\partial l(y_i, \hat y)}{\partial \hat y}
+\right|_{\hat y = \hat y_i^{(t-1)}}
+$$
+
+and
+
+$$
+h_i =
+\left.
+\frac{\partial^2 l(y_i, \hat y)}{\partial \hat y^2}
+\right|_{\hat y = \hat y_i^{(t-1)}}.
+$$
+
+### Step 3: start with a root node
+
+Initially, all observations are in one root node.
+
+### Step 4: consider candidate splits
+
+For each feature and each candidate threshold:
+
+- split the samples into left and right
+- compute $G_L, H_L, G_R, H_R$
+- compute the gain
+
+$$
+\mathrm{Gain}
+=
+\frac{1}{2}
+\left[
+\frac{G_L^2}{H_L + \lambda}
++
+\frac{G_R^2}{H_R + \lambda}
+-
+\frac{(G_L + G_R)^2}{H_L + H_R + \lambda}
+\right]
+-
+\gamma.
+$$
+
+### Step 5: choose the best split
+
+Select the split with the largest positive gain.
+
+If no split has positive enough gain, stop splitting that node.
+
+### Step 6: continue recursively
+
+Repeat the same procedure for child nodes until stopping conditions are met.
+
+### Step 7: assign leaf values
+
+Once the tree structure is fixed, compute for each leaf $j$
+
+$$
+G_j = \sum_{i \in I_j} g_i,
+\qquad
+H_j = \sum_{i \in I_j} h_i,
+$$
+
+and assign the leaf output
+
+$$
+w_j^\ast = - \frac{G_j}{H_j + \lambda}.
+$$
+
+### Step 8: update the predictions
+
+The new tree outputs
+
+$$
+f_t(x_i) = w_{q(x_i)},
+$$
+
+and the predictions become
+
+$$
+\hat y_i^{(t)}
+=
+\hat y_i^{(t-1)} + \eta f_t(x_i),
+$$
+
+where $\eta$ is the learning rate.
+
+Then the next boosting round begins.
+
+## 16. A bit about learning rate
+
+So far, the optimal leaf value is
+
+$$
+w_j^\ast = - \frac{G_j}{H_j + \lambda}.
+$$
+
+But XGBoost usually does not apply this full update directly.
+Instead it uses shrinkage:
+
+$$
+\hat y_i^{(t)}
+=
+\hat y_i^{(t-1)} + \eta f_t(x_i),
+\qquad 0 < \eta \le 1.
+$$
+
+This means the new tree is scaled by a learning rate $\eta$. Because smaller steps often generalize better. Instead of correcting everything aggressively in one round, the model improves gradually.
+
+
+## Special case. Squared-error loss: deriving $g_i$ and $h_i$
+
+Suppose the loss is squared error:
+
+$$
+l(y_i, \hat y_i) = (y_i - \hat y_i)^2.
+$$
+
+Differentiate with respect to $\hat y_i$:
+
+$$
+g_i
+=
+\frac{\partial}{\partial \hat y_i}
+(y_i - \hat y_i)^2
+=
+2(\hat y_i - y_i).
+$$
+
+Differentiate again:
+
+$$
+h_i
+=
+\frac{\partial^2}{\partial \hat y_i^2}
+(y_i - \hat y_i)^2
+=
+2.
+$$
+
+So for squared loss:
+
+- gradient is twice the signed residual
+- Hessian is a constant
+
+Then for a leaf $j$,
+
+$$
+G_j = \sum_{i \in I_j} 2(\hat y_i - y_i),
+\qquad
+H_j = \sum_{i \in I_j} 2 = 2|I_j|.
+$$
+
+So the leaf value becomes
+
+$$
+w_j^\ast
+=
+-
+\frac{\sum_{i \in I_j} 2(\hat y_i - y_i)}{2|I_j| + \lambda}.
+$$
+
+If $\lambda = 0$, then
+
+$$
+w_j^\ast
+=
+\frac{\sum_{i \in I_j} (y_i - \hat y_i)}{|I_j|}.
+$$
+
+This is simply the average residual in that leaf.
+
+So if you hear that boosting fits residuals, this is not wrong. it's just a special case of squared error loss.

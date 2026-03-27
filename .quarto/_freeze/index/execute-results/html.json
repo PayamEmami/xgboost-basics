@@ -1,0 +1,17 @@
+{
+  "hash": "1f3db5e01d8939584da587463a56fe05",
+  "result": {
+    "engine": "knitr",
+    "markdown": "# Preface {.unnumbered}\n\nThis is a Quarto book.\n\nTo learn more about Quarto books visit <https://quarto.org/docs/books>.\n\n\n\n\n\n::: {.cell}\n\n```{.r .cell-code  code-fold=\"true\"}\nplot(1:10)\n```\n\n::: {.cell-output-display}\n![](index_files/figure-html/unnamed-chunk-1-1.png){width=672}\n:::\n:::\n",
+    "supporting": [
+      "index_files"
+    ],
+    "filters": [
+      "rmarkdown/pagebreak.lua"
+    ],
+    "includes": {},
+    "engineDependencies": {},
+    "preserve": {},
+    "postProcess": true
+  }
+}

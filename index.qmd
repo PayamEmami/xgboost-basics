@@ -1,0 +1,8 @@
+# Preface {.unnumbered}
+
+In this chapter, we will explore XGBoost from the ground up. It is highly recommended that you already have some basic knowledge of decision trees and a general understanding of random forests. If you need a refresher, you can follow my tutorial [here](https://payamemami.com/randomforest-basics/){target="_blank"}.
+
+We will begin with a high-level and intuitive overview of how boosting works. Then, we will see how boosting can be used in practice, and finally, we will examine the mathematical ideas behind it in more detail.
+
+To follow along with the examples in this chapter, you will need to install the `xgboost` package. You can find the official installation instructions [here](https://xgboost.readthedocs.io/en/latest/install.html){target="_blank"}.
+

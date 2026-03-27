@@ -1,0 +1,25 @@
+project:
+  type: book
+
+book:
+  title: "Introduction to XGBoost"
+  author: "Payam Emami"
+  date: "3/18/2026"
+  chapters:
+    - index.qmd
+    - intro.qmd
+    - usage.qmd
+    - exercises.qmd
+    - math.qmd
+
+
+format:
+  html:
+    theme:
+      - cosmo
+      - brand
+  pdf:
+    documentclass: scrreprt
+
+
+

@@ -1,0 +1,116 @@
+# Exercises
+
+In this exercise, you will work on a real prediction task. We will use a [metagenomics](https://pubmed.ncbi.nlm.nih.gov/27126040/){target="_blank"} dataset to predict the age of individuals.
+
+# Loading the data
+
+The dataset is available through the `curatedMetagenomicData` package, so you first need to install and load this package before continuing.
+
+```{r}
+#| eval: false
+library(curatedMetagenomicData)
+```
+
+# Preparing the data
+
+We can extract the dataset as follows:
+
+```{r}
+#| eval: false
+samples <- sampleMetadata[sampleMetadata[["study_name"]] == "LifeLinesDeep_2016", ]
+life_data <- returnSamples(
+  samples,
+  dataType = "relative_abundance",
+  rownames = "short"
+)
+```
+
+The object `life_data` is a `TreeSummarizedExperiment`. We can use the `colData()` and `assay()` functions to extract the metadata and abundance matrix.
+
+```{r}
+#| eval: false
+x <- t(assay(life_data))
+age <- colData(life_data)$age
+age_category <- samples$age_category
+```
+
+Here, `x` contains the microbial abundance features, while `age` is the continuous response variable that we want to predict.
+
+# Your first task
+
+Your goal is to build an XGBoost model that predicts `age` from the abundance data in `x`.
+
+1. Convert the data into a format suitable for XGBoost.
+2. Split the data into training, validation, and test sets.
+3. Fit an initial model and monitor its performance over boosting rounds.
+4. Does the model appear to be overfitted? Can you show this in a plot? How can you reduce or prevent overfitting?
+5. Try to improve the model by tuning some of its parameters, for example by using cross-validation.
+6. Fit the final model using both the training and validation data, then evaluate it on the test data.
+7. What is the final performance on the test set? Maybe just showing correlation to the known age is enough!
+
+# Tips 1
+
+Since `age` is a numerical outcome, this is a regression problem. A natural starting point would therefore be to use an objective such as `reg:squarederror` and an evaluation metric such as `rmse`, although other reasonable choices are also possible depending on how you want to assess performance.
+
+# Second task
+
+If your regression model for `age` does not perform particularly well, you can instead try to model `age_category`. This variable has three classes: `adult`, `schoolage`, and `senior`.
+
+Before fitting any model, inspect the class distribution carefully. You should notice a very common problem: the classes are not balanced. If one category contains many more samples than the others, the model may become biased toward the majority class and achieve deceptively good overall accuracy while performing poorly on the minority classes.
+
+A good first step is therefore to check how many samples belong to each age group. Once you detect the imbalance, think about how to handle it. Possible strategies include using stratified splitting so that all datasets preserve the same class proportions, assigning class weights, or applying resampling approaches such as oversampling the minority classes or undersampling the majority class in the training set.
+
+# Tips 2
+
+Since `age_category` is categorical, you first need to convert it into integer class labels starting from `0`. For a three-class problem, a reasonable starting point would be to use an objective such as `multi:softprob` if you want class probabilities, or `multi:softmax` if you want direct class predictions. You also need to specify the number of classes. A natural evaluation metric to start with would be `mlogloss` or `merror`.
+
+# Tips 3
+
+In random forest, people often balance the classes by downsampling the majority class, oversampling the minority class, or drawing balanced bootstrap samples. The same general ideas can also be used before fitting XGBoost. For example, you can:
+
+- undersample the majority class
+- oversample the minority classes
+- create a more balanced training set with resampling methods
+
+
+XGBoost also gives you another option instead of only changing the data, you can change how much the model cares about each class. This is usually done by assigning larger weights to samples from underrepresented classes, so that mistakes on minority classes are penalized more strongly during training.
+
+So there are two main ways to deal with imbalance:
+
+1. balance the training data
+2. keep the data as it is, but use sample weights
+
+For multiclass XGBoost, sample weighting is often a very good and clean solution. A common strategy is to give each sample a weight inversely proportional to the size of its class. That way, rare classes get more influence during training.
+
+A small R example would be:
+
+```{r}
+#| eval: false
+tab <- table(age_category)
+class_weights <- 1 / tab
+sample_weights <- class_weights[age_category]
+
+dtrain <- xgb.DMatrix(data = as.matrix(x_train),
+                      label = y_train,
+                      weight = sample_weights)
+```
+
+Here, samples from smaller classes receive larger weights.
+
+One important point: if you rebalance, do it only on the training set, not on the validation or test sets.
+
+And another point: for imbalanced multiclass data, accuracy alone can be misleading. It is often better to also look at:
+
+* confusion matrix
+* per-class sensitivity or recall
+* balanced accuracy
+* macro F1 score
+
+You can you `confusionMatrix` from `caret` package to get a lot of information about the performance of you model.
+
+# Task 3
+
+Can you change the parameter of XGBoost so that instead of boosting, it does something closer to Random Forest? Does it do better?
+
+
+
