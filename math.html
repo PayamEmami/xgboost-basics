@@ -1,0 +1,1535 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.35">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>4&nbsp; Math behind XGBoost: from scratch, slowly, and with intuition – Introduction to XGBoost</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<link href="./exercises.html" rel="prev">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-46f66b053e56abd73bb6e954d61a315b.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-5ccb035bea26c1e21f80f44cf7c27909.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script src="site_libs/quarto-diagram/mermaid.min.js"></script>
+<script src="site_libs/quarto-diagram/mermaid-init.js"></script>
+<link href="site_libs/quarto-diagram/mermaid.css" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="nav-sidebar floating quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./math.html"><span class="chapter-number">4</span>&nbsp; <span class="chapter-title">Math behind XGBoost: from scratch, slowly, and with intuition</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header">
+    <div class="sidebar-title mb-0 py-0">
+      <a href="./">Introduction to XGBoost</a> 
+    </div>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Preface</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./intro.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">1</span>&nbsp; <span class="chapter-title">Introduction</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./usage.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">2</span>&nbsp; <span class="chapter-title">How to model using XGBoost</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./exercises.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">3</span>&nbsp; <span class="chapter-title">Exercises</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./math.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text"><span class="chapter-number">4</span>&nbsp; <span class="chapter-title">Math behind XGBoost: from scratch, slowly, and with intuition</span></span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">Table of contents</h2>
+   
+  <ul>
+  <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction"><span class="header-section-number">4.1</span> 1. Introduction</a></li>
+  <li><a href="#the-model-prediction-as-a-sum-of-trees" id="toc-the-model-prediction-as-a-sum-of-trees" class="nav-link" data-scroll-target="#the-model-prediction-as-a-sum-of-trees"><span class="header-section-number">4.2</span> 2. The model: prediction as a sum of trees</a></li>
+  <li><a href="#what-exactly-is-one-tree-in-xgboost" id="toc-what-exactly-is-one-tree-in-xgboost" class="nav-link" data-scroll-target="#what-exactly-is-one-tree-in-xgboost"><span class="header-section-number">4.3</span> 3. What exactly is one tree in XGBoost?</a></li>
+  <li><a href="#the-objective-function" id="toc-the-objective-function" class="nav-link" data-scroll-target="#the-objective-function"><span class="header-section-number">4.4</span> 4. The objective function:</a></li>
+  <li><a href="#regularization-for-a-tree" id="toc-regularization-for-a-tree" class="nav-link" data-scroll-target="#regularization-for-a-tree"><span class="header-section-number">4.5</span> 5. Regularization for a tree</a></li>
+  <li><a href="#additive-learning" id="toc-additive-learning" class="nav-link" data-scroll-target="#additive-learning"><span class="header-section-number">4.6</span> 6. Additive learning</a></li>
+  <li><a href="#the-objective-at-boosting-round-t" id="toc-the-objective-at-boosting-round-t" class="nav-link" data-scroll-target="#the-objective-at-boosting-round-t"><span class="header-section-number">4.7</span> 7. The objective at boosting round <span class="math inline">\(t\)</span></a></li>
+  <li><a href="#taylor-expansion" id="toc-taylor-expansion" class="nav-link" data-scroll-target="#taylor-expansion"><span class="header-section-number">4.8</span> 8. Taylor expansion</a></li>
+  <li><a href="#taylor-expansion-in-the-xgboost-setting" id="toc-taylor-expansion-in-the-xgboost-setting" class="nav-link" data-scroll-target="#taylor-expansion-in-the-xgboost-setting"><span class="header-section-number">4.9</span> 9. Taylor expansion in the XGBoost setting</a></li>
+  <li><a href="#plugging-in-the-tree-representation" id="toc-plugging-in-the-tree-representation" class="nav-link" data-scroll-target="#plugging-in-the-tree-representation"><span class="header-section-number">4.10</span> 10. Plugging in the tree representation</a></li>
+  <li><a href="#grouping-observations-by-leaf" id="toc-grouping-observations-by-leaf" class="nav-link" data-scroll-target="#grouping-observations-by-leaf"><span class="header-section-number">4.11</span> 11. Grouping observations by leaf</a></li>
+  <li><a href="#deriving-the-optimal-leaf-value" id="toc-deriving-the-optimal-leaf-value" class="nav-link" data-scroll-target="#deriving-the-optimal-leaf-value"><span class="header-section-number">4.12</span> 12. Deriving the optimal leaf value</a></li>
+  <li><a href="#deriving-the-score-of-a-fixed-tree-structure" id="toc-deriving-the-score-of-a-fixed-tree-structure" class="nav-link" data-scroll-target="#deriving-the-score-of-a-fixed-tree-structure"><span class="header-section-number">4.13</span> 13. Deriving the score of a fixed tree structure</a></li>
+  <li><a href="#deriving-the-split-gain-formula" id="toc-deriving-the-split-gain-formula" class="nav-link" data-scroll-target="#deriving-the-split-gain-formula"><span class="header-section-number">4.14</span> 14. Deriving the split gain formula</a></li>
+  <li><a href="#the-full-algorithm-for-one-boosting-round" id="toc-the-full-algorithm-for-one-boosting-round" class="nav-link" data-scroll-target="#the-full-algorithm-for-one-boosting-round"><span class="header-section-number">4.15</span> 15. The full algorithm for one boosting round</a>
+  <ul class="collapse">
+  <li><a href="#step-1-compute-current-predictions" id="toc-step-1-compute-current-predictions" class="nav-link" data-scroll-target="#step-1-compute-current-predictions"><span class="header-section-number">4.15.1</span> Step 1: compute current predictions</a></li>
+  <li><a href="#step-2-compute-gradients-and-hessians" id="toc-step-2-compute-gradients-and-hessians" class="nav-link" data-scroll-target="#step-2-compute-gradients-and-hessians"><span class="header-section-number">4.15.2</span> Step 2: compute gradients and Hessians</a></li>
+  <li><a href="#step-3-start-with-a-root-node" id="toc-step-3-start-with-a-root-node" class="nav-link" data-scroll-target="#step-3-start-with-a-root-node"><span class="header-section-number">4.15.3</span> Step 3: start with a root node</a></li>
+  <li><a href="#step-4-consider-candidate-splits" id="toc-step-4-consider-candidate-splits" class="nav-link" data-scroll-target="#step-4-consider-candidate-splits"><span class="header-section-number">4.15.4</span> Step 4: consider candidate splits</a></li>
+  <li><a href="#step-5-choose-the-best-split" id="toc-step-5-choose-the-best-split" class="nav-link" data-scroll-target="#step-5-choose-the-best-split"><span class="header-section-number">4.15.5</span> Step 5: choose the best split</a></li>
+  <li><a href="#step-6-continue-recursively" id="toc-step-6-continue-recursively" class="nav-link" data-scroll-target="#step-6-continue-recursively"><span class="header-section-number">4.15.6</span> Step 6: continue recursively</a></li>
+  <li><a href="#step-7-assign-leaf-values" id="toc-step-7-assign-leaf-values" class="nav-link" data-scroll-target="#step-7-assign-leaf-values"><span class="header-section-number">4.15.7</span> Step 7: assign leaf values</a></li>
+  <li><a href="#step-8-update-the-predictions" id="toc-step-8-update-the-predictions" class="nav-link" data-scroll-target="#step-8-update-the-predictions"><span class="header-section-number">4.15.8</span> Step 8: update the predictions</a></li>
+  </ul></li>
+  <li><a href="#a-bit-about-learning-rate" id="toc-a-bit-about-learning-rate" class="nav-link" data-scroll-target="#a-bit-about-learning-rate"><span class="header-section-number">4.16</span> 16. A bit about learning rate</a></li>
+  <li><a href="#special-case.-squared-error-loss-deriving-g_i-and-h_i" id="toc-special-case.-squared-error-loss-deriving-g_i-and-h_i" class="nav-link" data-scroll-target="#special-case.-squared-error-loss-deriving-g_i-and-h_i"><span class="header-section-number">4.17</span> Special case. Squared-error loss: deriving <span class="math inline">\(g_i\)</span> and <span class="math inline">\(h_i\)</span></a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title"><span class="chapter-number">4</span>&nbsp; <span class="chapter-title">Math behind XGBoost: from scratch, slowly, and with intuition</span></h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="introduction" class="level2" data-number="4.1">
+<h2 data-number="4.1" class="anchored" data-anchor-id="introduction"><span class="header-section-number">4.1</span> 1. Introduction</h2>
+<p>In this section, I will go through some of the most important mathematical details of XGBoost. But before going forward, as a reminder, just have it on your mind that XGBoost creates trees sequentially. We start from some base score (let’s say zero) and each tree adds some correction to this score until we get closer and closer to the training data. This is the core of XGBoost. We just have to figure out by how much we should change the scores in each leaf of a tree and also how to build the tree.</p>
+</section>
+<section id="the-model-prediction-as-a-sum-of-trees" class="level2" data-number="4.2">
+<h2 data-number="4.2" class="anchored" data-anchor-id="the-model-prediction-as-a-sum-of-trees"><span class="header-section-number">4.2</span> 2. The model: prediction as a sum of trees</h2>
+<p>Suppose we have training data</p>
+<p><span class="math display">\[
+(x_1, y_1), (x_2, y_2), \dots, (x_n, y_n),
+\]</span></p>
+<p>where:</p>
+<ul>
+<li><span class="math inline">\(x_i\)</span> is the feature vector for observation <span class="math inline">\(i\)</span></li>
+<li><span class="math inline">\(y_i\)</span> is the target for observation <span class="math inline">\(i\)</span></li>
+</ul>
+<p>We want a model that gives a prediction <span class="math inline">\(\hat y_i\)</span> from <span class="math inline">\(x_i\)</span>.</p>
+<p>In linear regression, we often write something like</p>
+<p><span class="math display">\[
+\hat y_i = \beta_0 + \beta_1 x_{i1} + \cdots + \beta_p x_{ip}.
+\]</span></p>
+<p>There, the unknown object is a vector of coefficients <span class="math inline">\(\beta\)</span>.</p>
+<p>In XGBoost, the unknown object is not one coefficient vector. Instead, the model is a sum of trees:</p>
+<p><span class="math display">\[
+\hat y_i = \sum_{k=1}^{K} f_k(x_i), \qquad f_k \in \mathcal{F}.
+\]</span></p>
+<p>This formula is the backbone of XGBoost.</p>
+<p>It says:</p>
+<ul>
+<li>there are <span class="math inline">\(K\)</span> trees</li>
+<li>each tree is a function <span class="math inline">\(f_k\)</span></li>
+<li>the final prediction is the sum of all tree outputs</li>
+</ul>
+<p>So each tree contributes a small correction, and all these corrections accumulate into the final prediction.</p>
+<div class="cell" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class="figure"><p></p>
+<div>
+<pre class="mermaid mermaid-js">%%{init: {'themeVariables': { 'fontSize': '50px' }}}%%
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#000000",
+    "primaryTextColor": "#000000",
+    "lineColor": "#000000",
+    "secondaryColor": "#ffffff",
+    "tertiaryColor": "#ffffff",
+    "clusterBkg": "#ffffff",
+    "clusterBorder": "#000000",
+    "fontFamily": "Arial"
+  }
+}}%%
+
+flowchart LR
+    subgraph T1["Tree 1"]
+        A1["time &lt; 9"] --&gt; B1["left: +1.42"]
+        A1 --&gt; C1["right: +0.37"]
+    end
+
+    P1["+"]
+
+    subgraph T2["Tree 2"]
+        A2["time &lt; 21"] --&gt; B2["left: -0.21"]
+        A2 --&gt; C2["right: +0.54"]
+    end
+
+    P2["+"]
+
+    subgraph T3["Tree 3"]
+        A3["time &lt; 5.6"] --&gt; B3["left: +0.18"]
+        A3 --&gt; C3["right: -0.09"]
+    end
+
+    EQUAL["="]
+    FINAL["Final prediction"]
+
+    T1 --&gt; P1 --&gt; T2 --&gt; P2 --&gt; T3 --&gt; EQUAL --&gt; FINAL
+
+    classDef blackstroke fill:#ffffff,stroke:#000000,color:#000000,stroke-width:1.5px;
+    classDef textonly fill:#ffffff,stroke:#ffffff,color:#000000;
+
+    class A1,B1,C1,A2,B2,C2,A3,B3,C3,FINAL blackstroke;
+    class P1,P2,EQUAL textonly;
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+</section>
+<section id="what-exactly-is-one-tree-in-xgboost" class="level2" data-number="4.3">
+<h2 data-number="4.3" class="anchored" data-anchor-id="what-exactly-is-one-tree-in-xgboost"><span class="header-section-number">4.3</span> 3. What exactly is one tree in XGBoost?</h2>
+<p>Mathematically, a tree is a function that assigns each input to a leaf, and each leaf has a numerical output.</p>
+<p>XGBoost writes a tree as</p>
+<p><span class="math display">\[
+f(x) = w_{q(x)}.
+\]</span></p>
+<p>This compact notation is very important. Let us decode it carefully.</p>
+<p>The function <span class="math inline">\(q(x)\)</span> tells us which leaf the sample <span class="math inline">\(x\)</span> lands in. If the tree has <span class="math inline">\(T\)</span> leaves, then <span class="math inline">\(q(x)\)</span> takes values in <span class="math inline">\(\{1,2,\dots,T\}\)</span>.</p>
+<p>The number <span class="math inline">\(w_j\)</span> is the score assigned to leaf <span class="math inline">\(j\)</span>.</p>
+<p>So if a sample <span class="math inline">\(x\)</span> lands in leaf 3, then</p>
+<p><span class="math display">\[
+q(x) = 3
+\]</span></p>
+<p>and the tree output is</p>
+<p><span class="math display">\[
+f(x) = w_3.
+\]</span></p>
+<p>This means that all observations falling into the same leaf receive <strong>exactly</strong> the same tree output.</p>
+<p>So a tree has two mathematical parts:</p>
+<ol type="1">
+<li>a structure, which decides who goes to which leaf</li>
+<li>a vector of leaf values, which decides what output each leaf gives</li>
+</ol>
+<p>This will matter a lot later, because XGBoost needs to optimize both the tree structure and the leaf values</p>
+<div class="cell" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class="figure"><p></p>
+<div>
+<pre class="mermaid mermaid-js">flowchart TD
+    A["Input sample x"] --&gt; B{"x1 &lt; 5?"}
+    B -- "Yes" --&gt; C{"x2 &lt; 2?"}
+    B -- "No" --&gt; D["Leaf 3&lt;br/&gt;q(x)=3&lt;br/&gt;output = w3"]
+
+    C -- "Yes" --&gt; E["Leaf 1&lt;br/&gt;q(x)=1&lt;br/&gt;output = w1"]
+    C -- "No" --&gt; F["Leaf 2&lt;br/&gt;q(x)=2&lt;br/&gt;output = w2"]
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+</section>
+<section id="the-objective-function" class="level2" data-number="4.4">
+<h2 data-number="4.4" class="anchored" data-anchor-id="the-objective-function"><span class="header-section-number">4.4</span> 4. The objective function:</h2>
+<p>As it should be obvious, we also need a way to measure whether our predictions are good or not. XGBoost does this using an objective function:</p>
+<p><span class="math display">\[
+\mathrm{Obj} = \sum_{i=1}^{n} l(y_i, \hat y_i) + \sum_{k=1}^{K} \Omega(f_k).
+\]</span></p>
+<p>This has two parts. The first part is the data-fitting term:</p>
+<p><span class="math display">\[
+\sum_{i=1}^{n} l(y_i, \hat y_i).
+\]</span></p>
+<p>Here, <span class="math inline">\(l(y_i, \hat y_i)\)</span> is the loss for observation <span class="math inline">\(i\)</span>. It tells us how bad the prediction <span class="math inline">\(\hat y_i\)</span> is when the true answer is <span class="math inline">\(y_i\)</span>.</p>
+<p>The second part is the regularization term:</p>
+<p><span class="math display">\[
+\sum_{k=1}^{K} \Omega(f_k).
+\]</span></p>
+<p>This penalizes complexity.</p>
+<p>So XGBoost is always balancing two goals:</p>
+<ul>
+<li>fit the training data well</li>
+<li>keep the model from becoming unnecessarily complicated</li>
+</ul>
+</section>
+<section id="regularization-for-a-tree" class="level2" data-number="4.5">
+<h2 data-number="4.5" class="anchored" data-anchor-id="regularization-for-a-tree"><span class="header-section-number">4.5</span> 5. Regularization for a tree</h2>
+<p>Let’s first have a look at the regularization. XGBoost uses the following regularization term for a tree:</p>
+<p><span class="math display">\[
+\Omega(f) = \gamma T + \frac{1}{2}\lambda \sum_{j=1}^{T} w_j^2,
+\]</span></p>
+<p>where:</p>
+<ul>
+<li><span class="math inline">\(T\)</span> is the number of leaves</li>
+<li><span class="math inline">\(w_j\)</span> is the output value of leaf <span class="math inline">\(j\)</span></li>
+<li><span class="math inline">\(\gamma\)</span> penalizes adding leaves</li>
+<li><span class="math inline">\(\lambda\)</span> penalizes very large leaf outputs</li>
+</ul>
+<p>Let us interpret this slowly.</p>
+<p>The term <span class="math inline">\(\gamma T\)</span> says:</p>
+<p>If you create more leaves, you pay a cost.</p>
+<p>So a split is not automatically good. A split must improve the fit enough to justify the extra complexity.</p>
+<p>The term</p>
+<p><span class="math display">\[
+\frac{1}{2}\lambda \sum_{j=1}^{T} w_j^2
+\]</span></p>
+<p>says ff leaf values become very large in magnitude, you also pay a cost.</p>
+<p>So XGBoost prefers leaf outputs that are not too extreme.</p>
+<p>This means XGBoost regularizes both the shape of the tree and the size of the corrections made by the leaves.</p>
+</section>
+<section id="additive-learning" class="level2" data-number="4.6">
+<h2 data-number="4.6" class="anchored" data-anchor-id="additive-learning"><span class="header-section-number">4.6</span> 6. Additive learning</h2>
+<p>If the full model is</p>
+<p><span class="math display">\[
+\hat y_i = \sum_{k=1}^{K} f_k(x_i),
+\]</span></p>
+<p>then training all trees jointly would be very difficult becuase we have to both fix the structure of the tree and its values.</p>
+<p>XGBoost avoids that by learning additively.</p>
+<p>At boosting round <span class="math inline">\(t\)</span>, we already have the current prediction</p>
+<p><span class="math display">\[
+\hat y_i^{(t-1)}.
+\]</span></p>
+<p>Then we add one new tree <span class="math inline">\(f_t\)</span>:</p>
+<p><span class="math display">\[
+\hat y_i^{(t)} = \hat y_i^{(t-1)} + f_t(x_i).
+\]</span></p>
+<p>Usually we start from</p>
+<p><span class="math display">\[
+\hat y_i^{(0)} = 0
+\]</span></p>
+<p>or from a constant initial score, depending on the loss.</p>
+<p>The essential idea is that at round <span class="math inline">\(t\)</span>, all previous trees are fixed. The only new thing we are trying to find is the new tree <span class="math inline">\(f_t\)</span>. So instead of solving one giant optimization problem, we solve many smaller ones.</p>
+</section>
+<section id="the-objective-at-boosting-round-t" class="level2" data-number="4.7">
+<h2 data-number="4.7" class="anchored" data-anchor-id="the-objective-at-boosting-round-t"><span class="header-section-number">4.7</span> 7. The objective at boosting round <span class="math inline">\(t\)</span></h2>
+<p>At round <span class="math inline">\(t\)</span>, the new prediction is</p>
+<p><span class="math display">\[
+\hat y_i^{(t)} = \hat y_i^{(t-1)} + f_t(x_i).
+\]</span></p>
+<p>So the objective becomes</p>
+<p><span class="math display">\[
+\mathrm{Obj}^{(t)} =
+\sum_{i=1}^{n}
+l\left(y_i, \hat y_i^{(t-1)} + f_t(x_i)\right)
++
+\Omega(f_t)
++
+\text{constant}.
+\]</span></p>
+<p>You noticed the constat in the formula, this is because all earlier trees are already fixed. Their contributions to the objective do not change while we are fitting the new tree. So for the purpose of optimizing <span class="math inline">\(f_t\)</span>, all terms involving old trees are constants.</p>
+<p>This means the round-<span class="math inline">\(t\)</span> training problem is choose the new tree <span class="math inline">\(f_t\)</span> that minimizes</p>
+<p><span class="math display">\[
+\sum_{i=1}^{n}
+l\left(y_i, \hat y_i^{(t-1)} + f_t(x_i)\right)
++
+\Omega(f_t).
+\]</span></p>
+<p>The hard part is that <span class="math inline">\(f_t\)</span> is a tree.</p>
+<p>That means the thing we want to optimize contains:</p>
+<ul>
+<li>a discrete structure, because we must choose splits</li>
+<li>continuous parameters, because each leaf has a numerical value</li>
+</ul>
+<p>The structure part is combinatorial. There are many possible features to split on, many thresholds, many tree shapes.</p>
+<p>So we need a way to evaluate candidate trees efficiently.</p>
+<p>The trick is instead of optimizing the true loss directly at each step, XGBoost approximates it locally using a second-order Taylor expansion.</p>
+</section>
+<section id="taylor-expansion" class="level2" data-number="4.8">
+<h2 data-number="4.8" class="anchored" data-anchor-id="taylor-expansion"><span class="header-section-number">4.8</span> 8. Taylor expansion</h2>
+<p>Suppose we have a smooth function <span class="math inline">\(F(z)\)</span>, and we are currently at the point <span class="math inline">\(z_0\)</span>.</p>
+<p>What happens to the value of the function if we move a little away from <span class="math inline">\(z_0\)</span>?</p>
+<p>Let that small move be <span class="math inline">\(\Delta\)</span>. Then the new point is <span class="math inline">\(z_0 + \Delta\)</span>.</p>
+<p>Taylor expansion gives us a very useful local approximation. It says that if the move is small, then we do not need to know the full complicated shape of the function. We only need to know three things at the current point:</p>
+<ul>
+<li>the current value of the function</li>
+<li>the current slope</li>
+<li>the current curvature</li>
+</ul>
+<p>Using those three pieces of information, we can approximate the new function value as</p>
+<p><span class="math display">\[
+F(z_0 + \Delta)
+\approx
+F(z_0) + F'(z_0)\Delta + \frac{1}{2}F''(z_0)\Delta^2.
+\]</span></p>
+<p>First, <span class="math inline">\(F(z_0)\)</span> is the value of the function where we are right now. That is our starting point.</p>
+<p>Next, <span class="math inline">\(F'(z_0)\Delta\)</span> is the linear correction. The first derivative (<span class="math inline">\(F'(z_0)\)</span>) tells us whether the function is currently going up or down, and how steeply. So this term tells us how the function would change if the slope stayed roughly constant for a very small move.</p>
+<p>Finally, <span class="math inline">\(\frac{1}{2}F''(z_0)\Delta^2\)</span> adds a curvature correction. The second derivative (<span class="math inline">\(F''(z_0)\)</span>) tells us how the slope itself changes as we move.</p>
+<ul>
+<li>If (<span class="math inline">\(F''(z_0) &gt; 0\)</span>), the curve bends upward.</li>
+<li>If (<span class="math inline">\(F''(z_0) &lt; 0\)</span>), the curve bends downward.</li>
+<li>If (<span class="math inline">\(F''(z_0) \approx 0\)</span>), the function is locally almost straight.</li>
+</ul>
+<p>So the second derivative tells us whether the current trend is becoming stronger or weaker as we move away from (<span class="math inline">\(z_0\)</span>).</p>
+<p>This is why the Taylor approximation is so useful. Even if the original function is complicated, near the current point it can be approximated by a quadratic expression. Quadratic expressions are much easier to optimize, because we can minimize them analytically.</p>
+</section>
+<section id="taylor-expansion-in-the-xgboost-setting" class="level2" data-number="4.9">
+<h2 data-number="4.9" class="anchored" data-anchor-id="taylor-expansion-in-the-xgboost-setting"><span class="header-section-number">4.9</span> 9. Taylor expansion in the XGBoost setting</h2>
+<p>We said that if we are at some current point and make a small move, then we can approximate the new function value using three local pieces of information:</p>
+<ul>
+<li>the current value</li>
+<li>the slope</li>
+<li>the curvature</li>
+</ul>
+<p>XGBoost does exactly this, but here the function is the loss, and the “current point” is the current prediction.</p>
+<p>For observation <span class="math inline">\(i\)</span>, the loss at boosting round <span class="math inline">\(t\)</span> is</p>
+<p><span class="math display">\[
+l\left(y_i, \hat y_i^{(t-1)} + f_t(x_i)\right).
+\]</span></p>
+<p>Let us read this carefully.</p>
+<ul>
+<li><span class="math inline">\(y_i\)</span> is the true observed outcome</li>
+<li><span class="math inline">\(\hat y_i^{(t-1)}\)</span> is the current prediction from all previous trees</li>
+<li><span class="math inline">\(f_t(x_i)\)</span> is the extra correction added by the new tree at round <span class="math inline">\(t\)</span></li>
+</ul>
+<p>So the new tree does not replace the old prediction. It only adds a small adjustment to it.</p>
+<p>That means we can think of the loss as a function of the prediction value, where we are currently sitting at <span class="math inline">\(\hat y_i^{(t-1)}\)</span> and then taking a small step of size <span class="math inline">\(f_t(x_i)\)</span>.</p>
+<p>We therefore expand the loss around the current prediction <span class="math inline">\(\hat y_i^{(t-1)}\)</span>.</p>
+<p>Define the first derivative</p>
+<p><span class="math display">\[
+g_i =
+\left.
+\frac{\partial l(y_i, \hat y)}{\partial \hat y}
+\right|_{\hat y = \hat y_i^{(t-1)}}
+\]</span></p>
+<p>and the second derivative</p>
+<p><span class="math display">\[
+h_i =
+\left.
+\frac{\partial^2 l(y_i, \hat y)}{\partial \hat y^2}
+\right|_{\hat y = \hat y_i^{(t-1)}}.
+\]</span></p>
+<p>These two quantities play exactly the same role as in the general Taylor formula.</p>
+<ul>
+<li><span class="math inline">\(g_i\)</span> is the local slope of the loss with respect to the prediction</li>
+<li><span class="math inline">\(h_i\)</span> is the local curvature of the loss with respect to the prediction</li>
+</ul>
+<p>So:</p>
+<ul>
+<li><span class="math inline">\(g_i\)</span> tells us whether increasing the prediction would locally increase or decrease the loss</li>
+<li><span class="math inline">\(h_i\)</span> tells us how sharply that slope itself changes as we move</li>
+</ul>
+<p>Using the second-order Taylor expansion, we get</p>
+<p><span class="math display">\[
+l\left(y_i, \hat y_i^{(t-1)} + f_t(x_i)\right)
+\approx
+l\left(y_i, \hat y_i^{(t-1)}\right)
++
+g_i f_t(x_i)
++
+\frac{1}{2} h_i f_t(x_i)^2.
+\]</span></p>
+<p>This approximation has the same three-part structure as before.</p>
+<p>First,</p>
+<p><span class="math display">\[
+l\left(y_i, \hat y_i^{(t-1)}\right)
+\]</span></p>
+<p>is the current loss value at the current prediction.</p>
+<p>Second,</p>
+<p><span class="math display">\[
+g_i f_t(x_i)
+\]</span></p>
+<p>is the linear correction based on the local slope.</p>
+<p>Third,</p>
+<p><span class="math display">\[
+\frac{1}{2} h_i f_t(x_i)^2
+\]</span></p>
+<p>is the curvature correction, which refines the linear approximation by accounting for how the slope changes.</p>
+<p>So for each observation, XGBoost replaces the original loss by a local quadratic approximation around the current prediction.</p>
+<p>It looks complicated but it is just important to remember that because the original loss may be difficult to optimize directly, this local quadratic form is much easier to work with. Once the loss is written this way, XGBoost can derive explicit formulas for leaf weights and for the gain from making a split.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>It is important not to think of gradients abstractly.</p>
+<p>For one observation <span class="math inline">\(i\)</span>:</p>
+<p><span class="math display">\[
+g_i
+=
+\left.
+\frac{\partial l(y_i, \hat y)}{\partial \hat y}
+\right|_{\hat y = \hat y_i^{(t-1)}}
+\]</span></p>
+<p>tells us how the loss changes if we nudge the prediction a little bit.</p>
+<p>So <span class="math inline">\(g_i\)</span> says in which direction should this prediction move to reduce the loss.</p>
+<p>If <span class="math inline">\(g_i\)</span> is positive, increasing the prediction increases the loss locally, so the prediction would prefer to move downward. If <span class="math inline">\(g_i\)</span> is negative, increasing the prediction decreases the loss locally, so the prediction would prefer to move upward.</p>
+<p>The second derivative</p>
+<p><span class="math display">\[
+h_i
+=
+\left.
+\frac{\partial^2 l(y_i, \hat y)}{\partial \hat y^2}
+\right|_{\hat y = \hat y_i^{(t-1)}}
+\]</span></p>
+<p>tells us how sharply the loss bends around the current prediction.</p>
+<p>So <span class="math inline">\(h_i\)</span> answers wow cautious should we be when making that move.</p>
+<p>If the curvature is high, the loss changes rapidly, so we should usually take a smaller step. If the curvature is lower, a larger step may be acceptable.</p>
+<p>So in plain language:</p>
+<ul>
+<li>gradient says where to move</li>
+<li>Hessian says how carefully to move</li>
+</ul>
+<p>This is why XGBoost uses second-order information.</p>
+</div>
+</div>
+</div>
+<p>Now we can substitute the Taylor approximation into the round-<span class="math inline">\(t\)</span> objective gives</p>
+<p><span class="math display">\[
+\mathrm{Obj}^{(t)}
+\approx
+\sum_{i=1}^{n}
+\left[
+l\left(y_i, \hat y_i^{(t-1)}\right)
++
+g_i f_t(x_i)
++
+\frac{1}{2} h_i f_t(x_i)^2
+\right]
++
+\Omega(f_t).
+\]</span></p>
+<p>The term</p>
+<p><span class="math display">\[
+\sum_{i=1}^{n} l\left(y_i, \hat y_i^{(t-1)}\right)
+\]</span></p>
+<p>does not depend on the new tree <span class="math inline">\(f_t\)</span>. So for optimization, it is constant and can be dropped.</p>
+<p>This leaves the approximate objective</p>
+<p><span class="math display">\[
+\tilde{\mathrm{Obj}}^{(t)}
+=
+\sum_{i=1}^{n}
+\left[
+g_i f_t(x_i)
++
+\frac{1}{2} h_i f_t(x_i)^2
+\right]
++
+\Omega(f_t).
+\]</span></p>
+</section>
+<section id="plugging-in-the-tree-representation" class="level2" data-number="4.10">
+<h2 data-number="4.10" class="anchored" data-anchor-id="plugging-in-the-tree-representation"><span class="header-section-number">4.10</span> 10. Plugging in the tree representation</h2>
+<p>Recall that a tree is written as</p>
+<p><span class="math display">\[
+f_t(x) = w_{q(x)}.
+\]</span></p>
+<p>So for observation <span class="math inline">\(i\)</span>,</p>
+<p><span class="math display">\[
+f_t(x_i) = w_{q(x_i)}.
+\]</span></p>
+<p>Substituting this into the approximate objective gives</p>
+<p><span class="math display">\[
+\tilde{\mathrm{Obj}}^{(t)}
+=
+\sum_{i=1}^{n}
+\left[
+g_i w_{q(x_i)}
++
+\frac{1}{2} h_i w_{q(x_i)}^2
+\right]
++
+\gamma T
++
+\frac{1}{2}\lambda \sum_{j=1}^{T} w_j^2.
+\]</span></p>
+<p>Now the tree structure appears through <span class="math inline">\(q(x_i)\)</span>, which tells us which leaf each observation belongs to.</p>
+</section>
+<section id="grouping-observations-by-leaf" class="level2" data-number="4.11">
+<h2 data-number="4.11" class="anchored" data-anchor-id="grouping-observations-by-leaf"><span class="header-section-number">4.11</span> 11. Grouping observations by leaf</h2>
+<p>Let</p>
+<p><span class="math display">\[
+I_j = \{ i \mid q(x_i) = j \}
+\]</span></p>
+<p>be the set of observations that fall into leaf <span class="math inline">\(j\)</span>.</p>
+<p>Because every observation in leaf <span class="math inline">\(j\)</span> gets the same output <span class="math inline">\(w_j\)</span>, we can regroup the objective by leaf instead of by observation.</p>
+<p>Then</p>
+<p><span class="math display">\[
+\tilde{\mathrm{Obj}}^{(t)}
+=
+\sum_{j=1}^{T}
+\left[
+\left(\sum_{i \in I_j} g_i\right) w_j
++
+\frac{1}{2}
+\left(\sum_{i \in I_j} h_i\right) w_j^2
+\right]
++
+\gamma T
++
+\frac{1}{2}\lambda \sum_{j=1}^{T} w_j^2.
+\]</span></p>
+<p>Now combine the quadratic terms:</p>
+<p><span class="math display">\[
+\tilde{\mathrm{Obj}}^{(t)}
+=
+\sum_{j=1}^{T}
+\left[
+\left(\sum_{i \in I_j} g_i\right) w_j
++
+\frac{1}{2}
+\left(\sum_{i \in I_j} h_i + \lambda\right) w_j^2
+\right]
++
+\gamma T.
+\]</span></p>
+<p>Define the leaf-level sums</p>
+<p><span class="math display">\[
+G_j = \sum_{i \in I_j} g_i,
+\qquad
+H_j = \sum_{i \in I_j} h_i.
+\]</span></p>
+<p>Then the objective becomes</p>
+<p><span class="math display">\[
+\tilde{\mathrm{Obj}}^{(t)}
+=
+\sum_{j=1}^{T}
+\left[
+G_j w_j
++
+\frac{1}{2}(H_j + \lambda) w_j^2
+\right]
++
+\gamma T.
+\]</span></p>
+<p>So basicaly once the tree structure is fixed, the entire role of the data inside leaf <span class="math inline">\(j\)</span> is summarized by just two numbers:</p>
+<p><span class="math display">\[
+G_j = \sum_{i \in I_j} g_i,
+\qquad
+H_j = \sum_{i \in I_j} h_i.
+\]</span></p>
+<p>That means the samples inside a leaf do not matter individually anymore. What matters is only:</p>
+<ul>
+<li>their total gradient</li>
+<li>their total Hessian</li>
+</ul>
+<p>So the whole optimization for the leaf value <span class="math inline">\(w_j\)</span> depends only on these aggregated quantities.</p>
+</section>
+<section id="deriving-the-optimal-leaf-value" class="level2" data-number="4.12">
+<h2 data-number="4.12" class="anchored" data-anchor-id="deriving-the-optimal-leaf-value"><span class="header-section-number">4.12</span> 12. Deriving the optimal leaf value</h2>
+<p>Now suppose the tree structure is fixed. Then the only unknowns are the leaf outputs <span class="math inline">\(w_1, \dots, w_T\)</span>.</p>
+<p>Because the objective separates over leaves, we can optimize one leaf at a time.</p>
+<p>For leaf <span class="math inline">\(j\)</span>, the relevant part of the objective is</p>
+<p><span class="math display">\[
+G_j w_j + \frac{1}{2}(H_j + \lambda) w_j^2.
+\]</span></p>
+<p>This is a quadratic function of <span class="math inline">\(w_j\)</span>. This is our objective and we need to minimize it to get an optimal value for it.</p>
+<p>To minimize it, differentiate with respect to <span class="math inline">\(w_j\)</span>:</p>
+<p><span class="math display">\[
+\frac{\partial}{\partial w_j}
+\left[
+G_j w_j + \frac{1}{2}(H_j + \lambda) w_j^2
+\right]
+=
+G_j + (H_j + \lambda) w_j.
+\]</span></p>
+<p>Set the derivative equal to zero:</p>
+<p><span class="math display">\[
+G_j + (H_j + \lambda) w_j = 0.
+\]</span></p>
+<p>Solving for <span class="math inline">\(w_j\)</span> gives</p>
+<p><span class="math display">\[
+w_j^\ast = - \frac{G_j}{H_j + \lambda}.
+\]</span></p>
+<p>This is the XGBoost leaf-weight formula for signle leaf.The numerator <span class="math inline">\(G_j\)</span> is the total gradient pressure in the leaf. It tells us the overall direction in which the predictions of the samples in that leaf want to move.</p>
+<p>The denominator <span class="math inline">\(H_j + \lambda\)</span> controls how large that move should be.</p>
+<ul>
+<li><span class="math inline">\(H_j\)</span> reflects local curvature of the loss</li>
+<li><span class="math inline">\(\lambda\)</span> adds shrinkage and stabilizes the update</li>
+</ul>
+<p>So the leaf output is negative slope divided by curvature</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Connection to Newton’s method
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>In one-dimensional optimization, Newton’s method updates a parameter by</p>
+<p><span class="math display">\[
+\theta_{\text{new}}
+=
+\theta_{\text{old}}
+-
+\frac{\text{gradient}}{\text{Hessian}}.
+\]</span></p>
+<p>That is:</p>
+<ul>
+<li>move opposite the slope</li>
+<li>scale the step by curvature</li>
+</ul>
+<p>The XGBoost leaf formula</p>
+<p><span class="math display">\[
+w_j^\ast = - \frac{G_j}{H_j + \lambda}
+\]</span></p>
+<p>has exactly the same form. So while ordinary gradient boosting is often explained as fitting negative gradients, XGBoost goes further:</p>
+<p>It uses second-order information and computes something much closer to a local Newton update.</p>
+</div>
+</div>
+</div>
+</section>
+<section id="deriving-the-score-of-a-fixed-tree-structure" class="level2" data-number="4.13">
+<h2 data-number="4.13" class="anchored" data-anchor-id="deriving-the-score-of-a-fixed-tree-structure"><span class="header-section-number">4.13</span> 13. Deriving the score of a fixed tree structure</h2>
+<p>Now let us plug the optimal leaf value back into the objective.</p>
+<p>For one leaf, the objective contribution is</p>
+<p><span class="math display">\[
+G_j w_j + \frac{1}{2}(H_j + \lambda) w_j^2.
+\]</span></p>
+<p>Insert</p>
+<p><span class="math display">\[
+w_j^\ast = - \frac{G_j}{H_j + \lambda}.
+\]</span></p>
+<p>The first term becomes</p>
+<p><span class="math display">\[
+G_j w_j^\ast
+=
+G_j \left(- \frac{G_j}{H_j + \lambda}\right)
+=
+- \frac{G_j^2}{H_j + \lambda}.
+\]</span></p>
+<p>The second term becomes</p>
+<p><span class="math display">\[
+\frac{1}{2}(H_j + \lambda)(w_j^\ast)^2
+=
+\frac{1}{2}(H_j + \lambda)
+\left(
+\frac{G_j^2}{(H_j + \lambda)^2}
+\right)
+=
+\frac{1}{2}
+\frac{G_j^2}{H_j + \lambda}.
+\]</span></p>
+<p>Adding them gives</p>
+<p><span class="math display">\[
+- \frac{G_j^2}{H_j + \lambda}
++
+\frac{1}{2}
+\frac{G_j^2}{H_j + \lambda}
+=
+- \frac{1}{2}
+\frac{G_j^2}{H_j + \lambda}.
+\]</span></p>
+<p>So each leaf contributes</p>
+<p><span class="math display">\[
+- \frac{1}{2}
+\frac{G_j^2}{H_j + \lambda}.
+\]</span></p>
+<p>Therefore the best objective value for a fixed tree structure is</p>
+<p><span class="math display">\[
+\tilde{\mathrm{Obj}}^\ast
+=
+-
+\frac{1}{2}
+\sum_{j=1}^{T}
+\frac{G_j^2}{H_j + \lambda}
++
+\gamma T.
+\]</span></p>
+<p>This is the score of a tree structure and is important because it tells us how to evaluate a proposed tree structure.</p>
+<p>If we know:</p>
+<ul>
+<li>which samples fall into each leaf</li>
+<li>the sum of gradients in each leaf</li>
+<li>the sum of Hessians in each leaf</li>
+</ul>
+<p>then we can compute</p>
+<p><span class="math display">\[
+-\frac{1}{2} \sum_{j=1}^{T} \frac{G_j^2}{H_j + \lambda}+\gamma T
+\]</span></p>
+<p>and judge how good that tree is. This essentially replaces impurity measures like Gini or entropy.</p>
+</section>
+<section id="deriving-the-split-gain-formula" class="level2" data-number="4.14">
+<h2 data-number="4.14" class="anchored" data-anchor-id="deriving-the-split-gain-formula"><span class="header-section-number">4.14</span> 14. Deriving the split gain formula</h2>
+<p>Suppose we currently have one leaf, which we may or may not split.</p>
+<p>Let the parent node contain a set of observations with total gradient and Hessian</p>
+<p><span class="math display">\[
+G = \sum_{i \in I} g_i,
+\qquad
+H = \sum_{i \in I} h_i.
+\]</span></p>
+<p>If we keep it as one leaf, its best contribution is</p>
+<p><span class="math display">\[
+- \frac{1}{2} \frac{G^2}{H + \lambda}.
+\]</span></p>
+<p>Now think we split this node into a left child and a right child.</p>
+<p>Let their statistics be</p>
+<p><span class="math display">\[
+G_L, H_L
+\qquad \text{and} \qquad
+G_R, H_R.
+\]</span></p>
+<p>Because the children partition the parent, we have</p>
+<p><span class="math display">\[
+G = G_L + G_R,
+\qquad
+H = H_L + H_R.
+\]</span></p>
+<p>After the split, the best contribution becomes</p>
+<p><span class="math display">\[
+- \frac{1}{2} \frac{G_L^2}{H_L + \lambda}
+-
+\frac{1}{2} \frac{G_R^2}{H_R + \lambda}.
+\]</span></p>
+<p>But making the split increases the number of leaves, so we must pay the complexity penalty <span class="math inline">\(\gamma\)</span>.</p>
+<p>Therefore the improvement from the split, called the gain, is</p>
+<p><span class="math display">\[
+\mathrm{Gain}
+=
+\frac{1}{2}
+\left[
+\frac{G_L^2}{H_L + \lambda}
++
+\frac{G_R^2}{H_R + \lambda}
+-
+\frac{(G_L + G_R)^2}{H_L + H_R + \lambda}
+\right]
+-
+\gamma.
+\]</span></p>
+<p>This formula has a very natural meaning.</p>
+<p>The term</p>
+<p><span class="math display">\[
+\frac{G_L^2}{H_L + \lambda}
+\]</span></p>
+<p>measures how useful the left child is.</p>
+<p>The term</p>
+<p><span class="math display">\[
+\frac{G_R^2}{H_R + \lambda}
+\]</span></p>
+<p>measures how useful the right child is.</p>
+<p>The term</p>
+<p><span class="math display">\[
+\frac{(G_L + G_R)^2}{H_L + H_R + \lambda}
+\]</span></p>
+<p>measures how useful the parent would be if it stayed unsplit.</p>
+<p>So the gain says how much better is it to give the left and right groups separate corrections instead of forcing them to share one correction?</p>
+<p>Then we subtract <span class="math inline">\(\gamma\)</span> because more leaves mean more complexity.</p>
+<p>So a split is good only if the improvement in fit is large enough to justify the added complexity.</p>
+</section>
+<section id="the-full-algorithm-for-one-boosting-round" class="level2" data-number="4.15">
+<h2 data-number="4.15" class="anchored" data-anchor-id="the-full-algorithm-for-one-boosting-round"><span class="header-section-number">4.15</span> 15. The full algorithm for one boosting round</h2>
+<p>Now let us summarize exactly what happens in one round of XGBoost.</p>
+<section id="step-1-compute-current-predictions" class="level3" data-number="4.15.1">
+<h3 data-number="4.15.1" class="anchored" data-anchor-id="step-1-compute-current-predictions"><span class="header-section-number">4.15.1</span> Step 1: compute current predictions</h3>
+<p>Using all trees built so far, compute</p>
+<p><span class="math display">\[
+\hat y_i^{(t-1)}
+\]</span></p>
+<p>for every training observation.</p>
+</section>
+<section id="step-2-compute-gradients-and-hessians" class="level3" data-number="4.15.2">
+<h3 data-number="4.15.2" class="anchored" data-anchor-id="step-2-compute-gradients-and-hessians"><span class="header-section-number">4.15.2</span> Step 2: compute gradients and Hessians</h3>
+<p>For each observation, compute</p>
+<p><span class="math display">\[
+g_i =
+\left.
+\frac{\partial l(y_i, \hat y)}{\partial \hat y}
+\right|_{\hat y = \hat y_i^{(t-1)}}
+\]</span></p>
+<p>and</p>
+<p><span class="math display">\[
+h_i =
+\left.
+\frac{\partial^2 l(y_i, \hat y)}{\partial \hat y^2}
+\right|_{\hat y = \hat y_i^{(t-1)}}.
+\]</span></p>
+</section>
+<section id="step-3-start-with-a-root-node" class="level3" data-number="4.15.3">
+<h3 data-number="4.15.3" class="anchored" data-anchor-id="step-3-start-with-a-root-node"><span class="header-section-number">4.15.3</span> Step 3: start with a root node</h3>
+<p>Initially, all observations are in one root node.</p>
+</section>
+<section id="step-4-consider-candidate-splits" class="level3" data-number="4.15.4">
+<h3 data-number="4.15.4" class="anchored" data-anchor-id="step-4-consider-candidate-splits"><span class="header-section-number">4.15.4</span> Step 4: consider candidate splits</h3>
+<p>For each feature and each candidate threshold:</p>
+<ul>
+<li>split the samples into left and right</li>
+<li>compute <span class="math inline">\(G_L, H_L, G_R, H_R\)</span></li>
+<li>compute the gain</li>
+</ul>
+<p><span class="math display">\[
+\mathrm{Gain}
+=
+\frac{1}{2}
+\left[
+\frac{G_L^2}{H_L + \lambda}
++
+\frac{G_R^2}{H_R + \lambda}
+-
+\frac{(G_L + G_R)^2}{H_L + H_R + \lambda}
+\right]
+-
+\gamma.
+\]</span></p>
+</section>
+<section id="step-5-choose-the-best-split" class="level3" data-number="4.15.5">
+<h3 data-number="4.15.5" class="anchored" data-anchor-id="step-5-choose-the-best-split"><span class="header-section-number">4.15.5</span> Step 5: choose the best split</h3>
+<p>Select the split with the largest positive gain.</p>
+<p>If no split has positive enough gain, stop splitting that node.</p>
+</section>
+<section id="step-6-continue-recursively" class="level3" data-number="4.15.6">
+<h3 data-number="4.15.6" class="anchored" data-anchor-id="step-6-continue-recursively"><span class="header-section-number">4.15.6</span> Step 6: continue recursively</h3>
+<p>Repeat the same procedure for child nodes until stopping conditions are met.</p>
+</section>
+<section id="step-7-assign-leaf-values" class="level3" data-number="4.15.7">
+<h3 data-number="4.15.7" class="anchored" data-anchor-id="step-7-assign-leaf-values"><span class="header-section-number">4.15.7</span> Step 7: assign leaf values</h3>
+<p>Once the tree structure is fixed, compute for each leaf <span class="math inline">\(j\)</span></p>
+<p><span class="math display">\[
+G_j = \sum_{i \in I_j} g_i,
+\qquad
+H_j = \sum_{i \in I_j} h_i,
+\]</span></p>
+<p>and assign the leaf output</p>
+<p><span class="math display">\[
+w_j^\ast = - \frac{G_j}{H_j + \lambda}.
+\]</span></p>
+</section>
+<section id="step-8-update-the-predictions" class="level3" data-number="4.15.8">
+<h3 data-number="4.15.8" class="anchored" data-anchor-id="step-8-update-the-predictions"><span class="header-section-number">4.15.8</span> Step 8: update the predictions</h3>
+<p>The new tree outputs</p>
+<p><span class="math display">\[
+f_t(x_i) = w_{q(x_i)},
+\]</span></p>
+<p>and the predictions become</p>
+<p><span class="math display">\[
+\hat y_i^{(t)}
+=
+\hat y_i^{(t-1)} + \eta f_t(x_i),
+\]</span></p>
+<p>where <span class="math inline">\(\eta\)</span> is the learning rate.</p>
+<p>Then the next boosting round begins.</p>
+</section>
+</section>
+<section id="a-bit-about-learning-rate" class="level2" data-number="4.16">
+<h2 data-number="4.16" class="anchored" data-anchor-id="a-bit-about-learning-rate"><span class="header-section-number">4.16</span> 16. A bit about learning rate</h2>
+<p>So far, the optimal leaf value is</p>
+<p><span class="math display">\[
+w_j^\ast = - \frac{G_j}{H_j + \lambda}.
+\]</span></p>
+<p>But XGBoost usually does not apply this full update directly. Instead it uses shrinkage:</p>
+<p><span class="math display">\[
+\hat y_i^{(t)}
+=
+\hat y_i^{(t-1)} + \eta f_t(x_i),
+\qquad 0 &lt; \eta \le 1.
+\]</span></p>
+<p>This means the new tree is scaled by a learning rate <span class="math inline">\(\eta\)</span>. Because smaller steps often generalize better. Instead of correcting everything aggressively in one round, the model improves gradually.</p>
+</section>
+<section id="special-case.-squared-error-loss-deriving-g_i-and-h_i" class="level2" data-number="4.17">
+<h2 data-number="4.17" class="anchored" data-anchor-id="special-case.-squared-error-loss-deriving-g_i-and-h_i"><span class="header-section-number">4.17</span> Special case. Squared-error loss: deriving <span class="math inline">\(g_i\)</span> and <span class="math inline">\(h_i\)</span></h2>
+<p>Suppose the loss is squared error:</p>
+<p><span class="math display">\[
+l(y_i, \hat y_i) = (y_i - \hat y_i)^2.
+\]</span></p>
+<p>Differentiate with respect to <span class="math inline">\(\hat y_i\)</span>:</p>
+<p><span class="math display">\[
+g_i
+=
+\frac{\partial}{\partial \hat y_i}
+(y_i - \hat y_i)^2
+=
+2(\hat y_i - y_i).
+\]</span></p>
+<p>Differentiate again:</p>
+<p><span class="math display">\[
+h_i
+=
+\frac{\partial^2}{\partial \hat y_i^2}
+(y_i - \hat y_i)^2
+=
+2.
+\]</span></p>
+<p>So for squared loss:</p>
+<ul>
+<li>gradient is twice the signed residual</li>
+<li>Hessian is a constant</li>
+</ul>
+<p>Then for a leaf <span class="math inline">\(j\)</span>,</p>
+<p><span class="math display">\[
+G_j = \sum_{i \in I_j} 2(\hat y_i - y_i),
+\qquad
+H_j = \sum_{i \in I_j} 2 = 2|I_j|.
+\]</span></p>
+<p>So the leaf value becomes</p>
+<p><span class="math display">\[
+w_j^\ast
+=
+-
+\frac{\sum_{i \in I_j} 2(\hat y_i - y_i)}{2|I_j| + \lambda}.
+\]</span></p>
+<p>If <span class="math inline">\(\lambda = 0\)</span>, then</p>
+<p><span class="math display">\[
+w_j^\ast
+=
+\frac{\sum_{i \in I_j} (y_i - \hat y_i)}{|I_j|}.
+\]</span></p>
+<p>This is simply the average residual in that leaf.</p>
+<p>So if you hear that boosting fits residuals, this is not wrong. it’s just a special case of squared error loss.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="./exercises.html" class="pagination-link" aria-label="Exercises">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-number">3</span>&nbsp; <span class="chapter-title">Exercises</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
