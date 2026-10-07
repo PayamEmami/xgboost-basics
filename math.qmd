@@ -1,4 +1,4 @@
-# Math behind XGBoost: from scratch, slowly, and with intuition
+# Math behind XGBoost
 
 ## 1. Introduction
 

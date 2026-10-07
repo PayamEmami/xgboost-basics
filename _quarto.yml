@@ -8,7 +8,7 @@ book:
   chapters:
     - index.qmd
     - intro.qmd
-    - usage.qmd
+    - practice.qmd
     - exercises.qmd
     - math.qmd
 
@@ -18,8 +18,6 @@ format:
     theme:
       - cosmo
       - brand
-  pdf:
-    documentclass: scrreprt
 
 
 
